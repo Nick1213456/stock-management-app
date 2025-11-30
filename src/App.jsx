@@ -652,7 +652,7 @@ function App() {
                   const catA = categories.find(c => c.id === a.category_id)?.name || 'zzzz' // 未分類排最後
                   const catB = categories.find(c => c.id === b.category_id)?.name || 'zzzz'
                   if (catA !== catB) return catA.localeCompare(catB, 'zh-Hant')
-                  return a.name.localeCompare(b.name, 'zh-Hant')
+                  return a.sku.localeCompare(b.sku, 'zh-Hant')
                 })
                 .length === 0 ? (
                 <div className="empty-state">
@@ -682,7 +682,7 @@ function App() {
                           const catA = categories.find(c => c.id === a.category_id)?.name || 'zzzz'
                           const catB = categories.find(c => c.id === b.category_id)?.name || 'zzzz'
                           if (catA !== catB) return catA.localeCompare(catB, 'zh-Hant')
-                          return a.name.localeCompare(b.name, 'zh-Hant')
+                          return a.sku.localeCompare(b.sku, 'zh-Hant')
                         })
                         .map(product => {
                           const category = categories.find(c => c.id === product.category_id)
@@ -815,7 +815,7 @@ function App() {
                             const catA = categories.find(c => c.id === a.category_id)?.name || 'zzzz'
                             const catB = categories.find(c => c.id === b.category_id)?.name || 'zzzz'
                             if (catA !== catB) return catA.localeCompare(catB, 'zh-Hant')
-                            return a.name.localeCompare(b.name, 'zh-Hant')
+                            return a.sku.localeCompare(b.sku, 'zh-Hant')
                           })
                           .map(product => {
                             const category = categories.find(c => c.id === product.category_id)
