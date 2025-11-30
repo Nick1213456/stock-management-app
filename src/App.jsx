@@ -384,9 +384,9 @@ function App() {
   const saveEdit = async () => {
     if (!editingCell) return
 
-    const quantity = parseInt(editValue)
+    const quantity = parseFloat(editValue)
     if (isNaN(quantity) || quantity < 0) {
-      alert('請輸入有效的數量（0或正整數，不能是負數）')
+      alert('請輸入有效的數量（0或正數，可以有小數點）')
       return
     }
 
@@ -445,6 +445,7 @@ function App() {
         <div className="quantity-edit-wrapper">
           <input
             type="number"
+            step="0.1"
             className="edit-quantity-input"
             value={editValue}
             onChange={(e) => setEditValue(e.target.value)}
