@@ -1,31 +1,41 @@
 import { useState, useEffect } from 'react'
 import { supabase } from './supabaseClient'
-import { Package, Settings, Save, X, List, Search, Plus, LogOut } from 'lucide-react'
+import { Package, Settings, Save, X, List, Search, Plus, LogOut, ChevronDown, ChevronUp } from 'lucide-react'
 import Login from './Login'
 import SetNickname from './SetNickname'
+import PullToRefresh from './PullToRefresh'
 import PWAInstallPrompt from './PWAInstallPrompt'
 import OfflineIndicator from './OfflineIndicator'
 import './index.css'
 
 function App() {
   const [products, setProducts] = useState([])
+  const [categories, setCategories] = useState([])
   const [loading, setLoading] = useState(true)
   const [currentTab, setCurrentTab] = useState('list') // 'list' or 'settings'
   const [editingCell, setEditingCell] = useState(null) // { productId, field }
   const [editValue, setEditValue] = useState('')
-  const [newProduct, setNewProduct] = useState({ name: '', sku: '', category_id: '', notes: '' })
-  const [categories, setCategories] = useState([])
   const [searchQuery, setSearchQuery] = useState('')
   const [selectedCategory, setSelectedCategory] = useState('all')
-  const [settingsMode, setSettingsMode] = useState('product') // 'product' or 'category'
+  const [settingsMode, setSettingsMode] = useState('product') // 'product', 'category', or 'description'
+  const [showAddProductForm, setShowAddProductForm] = useState(false)
+  const [newProduct, setNewProduct] = useState({ name: '', sku: '', category_id: '', notes: '' })
   const [newCategory, setNewCategory] = useState('')
   const [isCreatingCategory, setIsCreatingCategory] = useState(false)
-  const [showAddProductForm, setShowAddProductForm] = useState(false)
   const [editingProductId, setEditingProductId] = useState(null)
   const [editingProduct, setEditingProduct] = useState({ name: '', sku: '', category_id: '', notes: '' })
+  const [editingCategoryId, setEditingCategoryId] = useState(null)
+  const [editingCategory, setEditingCategory] = useState({ name: '' })
   const [session, setSession] = useState(null)
   const [needsNickname, setNeedsNickname] = useState(false)
   const [showNicknameEdit, setShowNicknameEdit] = useState(false)
+  const [isSaving, setIsSaving] = useState(false)
+  const [description, setDescription] = useState('')
+  const [descriptionUpdatedAt, setDescriptionUpdatedAt] = useState(null)
+  const [descriptionUpdatedBy, setDescriptionUpdatedBy] = useState('')
+  const [isDescriptionExpanded, setIsDescriptionExpanded] = useState(false)
+  const [editingDescription, setEditingDescription] = useState('')
+  const [isSavingDescription, setIsSavingDescription] = useState(false)
 
   useEffect(() => {
     // Check for existing session
@@ -78,21 +88,16 @@ function App() {
     return () => subscription.unsubscribe()
   }, [])
 
-  // 載入所有商品
   useEffect(() => {
     if (session) {
-      console.log('Session exists, fetching data...')
       fetchProducts()
       fetchCategories()
-    } else {
-      console.log('No session, skipping data fetch')
-      setLoading(false)
+      fetchDescription()
     }
   }, [session])
 
   const fetchProducts = async () => {
     try {
-      setLoading(true)
       const { data, error } = await supabase
         .from('products')
         .select('*')
@@ -123,6 +128,78 @@ function App() {
     }
   }
 
+  // 讀取說明文字
+  const fetchDescription = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('settings')
+        .select('value, updated_at, updated_by')
+        .eq('key', 'inventory_description')
+        .single()
+
+      if (error) {
+        // 如果沒有資料，使用預設值
+        if (error.code === 'PGRST116') {
+          setDescription('這是千奇庫存管理系統的使用說明。點擊展開查看詳細內容。')
+          setDescriptionUpdatedAt(null)
+          setDescriptionUpdatedBy('')
+        } else {
+          throw error
+        }
+      } else {
+        setDescription(data?.value || '這是千奇庫存管理系統的使用說明。點擊展開查看詳細內容。')
+        setDescriptionUpdatedAt(data?.updated_at)
+        setDescriptionUpdatedBy(data?.updated_by)
+      }
+    } catch (error) {
+      console.error('Error fetching description:', error)
+    }
+  }
+
+  // 儲存說明文字
+  const saveDescription = async () => {
+    if (!editingDescription.trim()) {
+      alert('請輸入說明內容')
+      return
+    }
+
+    const userIdentifier = session?.user?.user_metadata?.nickname || session?.user?.email || 'Unknown'
+
+    try {
+      setIsSavingDescription(true)
+      const { error } = await supabase
+        .from('settings')
+        .upsert({
+          key: 'inventory_description',
+          value: editingDescription,
+          updated_at: new Date().toISOString(),
+          updated_by: userIdentifier
+        }, {
+          onConflict: 'key'
+        })
+
+      if (error) throw error
+
+      setDescription(editingDescription)
+      setDescriptionUpdatedAt(new Date().toISOString())
+      setDescriptionUpdatedBy(userIdentifier)
+      alert('✓ 說明更新成功！')
+    } catch (error) {
+      console.error('Error saving description:', error)
+      alert('✗ 更新說明失敗: ' + error.message)
+    } finally {
+      setIsSavingDescription(false)
+    }
+  }
+
+  // 下拉更新處理函數
+  const handleRefresh = async () => {
+    await Promise.all([
+      fetchProducts(),
+      fetchCategories()
+    ])
+  }
+
   // 創建新商品
   const handleCreateProduct = async (e) => {
     e.preventDefault()
@@ -134,6 +211,7 @@ function App() {
     const userIdentifier = session?.user?.user_metadata?.nickname || session?.user?.email || 'Unknown'
 
     try {
+      setIsSaving(true)
       const { data, error } = await supabase
         .from('products')
         .insert([
@@ -160,6 +238,8 @@ function App() {
     } catch (error) {
       console.error('Error creating product:', error)
       alert('創建商品失敗: ' + error.message)
+    } finally {
+      setIsSaving(false)
     }
   }
 
@@ -190,6 +270,7 @@ function App() {
     const userIdentifier = session?.user?.user_metadata?.nickname || session?.user?.email || 'Unknown'
 
     try {
+      setIsSaving(true)
       const { error } = await supabase
         .from('products')
         .update({
@@ -213,6 +294,8 @@ function App() {
     } catch (error) {
       console.error('Error updating product:', error)
       alert('✗ 更新商品失敗: ' + error.message)
+    } finally {
+      setIsSaving(false)
     }
   }
 
@@ -232,24 +315,66 @@ function App() {
 
       if (error) throw error
 
+      await fetchCategories()
       setNewCategory('')
-      alert('✓ 分類創建成功！')
-      await fetchCategories() // 重新載入分類列表
+      alert('分類創建成功！')
     } catch (error) {
       console.error('Error creating category:', error)
-      alert('✗ 創建分類失敗: ' + error.message)
+      alert('創建分類失敗: ' + error.message)
     } finally {
       setIsCreatingCategory(false)
     }
   }
 
-  // 開始編輯
+  // 開始編輯分類
+  const startEditCategory = (category) => {
+    setEditingCategoryId(category.id)
+    setEditingCategory({ name: category.name })
+  }
+
+  // 取消編輯分類
+  const cancelEditCategory = () => {
+    setEditingCategoryId(null)
+    setEditingCategory({ name: '' })
+  }
+
+  // 儲存編輯分類
+  const saveEditCategory = async () => {
+    if (!editingCategory.name.trim()) {
+      alert('請輸入分類名稱')
+      return
+    }
+
+    try {
+      setIsSaving(true)
+      const { error } = await supabase
+        .from('categories')
+        .update({ name: editingCategory.name })
+        .eq('id', editingCategoryId)
+
+      if (error) throw error
+
+      // 更新本地狀態
+      setCategories(categories.map(c =>
+        c.id === editingCategoryId ? { ...c, name: editingCategory.name } : c
+      ))
+      alert('✓ 分類更新成功！')
+      cancelEditCategory()
+    } catch (error) {
+      console.error('Error updating category:', error)
+      alert('✗ 更新分類失敗: ' + error.message)
+    } finally {
+      setIsSaving(false)
+    }
+  }
+
+  // 開始編輯庫存
   const startEdit = (productId, field, currentValue) => {
     setEditingCell({ productId, field })
     setEditValue(currentValue.toString())
   }
 
-  // 取消編輯
+  // 取消編輯庫存
   const cancelEdit = () => {
     setEditingCell(null)
     setEditValue('')
@@ -269,6 +394,7 @@ function App() {
     const userIdentifier = session?.user?.user_metadata?.nickname || session?.user?.email || 'Unknown'
 
     try {
+      setIsSaving(true)
       // 處理欄位名稱映射（資料庫中使用 war 而不是 warehouse）
       let dbFieldPrefix = editingCell.field
       if (editingCell.field === 'inventory_warehouse') {
@@ -305,6 +431,8 @@ function App() {
     } catch (error) {
       console.error('Error updating inventory:', error)
       alert('更新庫存失敗: ' + error.message)
+    } finally {
+      setIsSaving(false)
     }
   }
 
@@ -327,10 +455,10 @@ function App() {
             autoFocus
           />
           <div className="edit-actions">
-            <button className="icon-btn save" onClick={saveEdit}>
-              <Save size={16} />
+            <button className="icon-btn save" onClick={saveEdit} disabled={isSaving}>
+              {isSaving ? <div className="spinner-dark" style={{ width: '16px', height: '16px', borderTopColor: 'white', border: '2px solid rgba(255,255,255,0.3)' }}></div> : <Save size={16} />}
             </button>
-            <button className="icon-btn cancel" onClick={cancelEdit}>
+            <button className="icon-btn cancel" onClick={cancelEdit} disabled={isSaving}>
               <X size={16} />
             </button>
           </div>
@@ -384,7 +512,7 @@ function App() {
         <header className="header">
           <h1>
             <Package size={24} />
-            庫存管理系統
+            千奇庫存管理系統
           </h1>
         </header>
         <div className="loading">載入中...</div>
@@ -407,346 +535,553 @@ function App() {
   }
 
   return (
-    <div className="app">
-      {showNicknameEdit && (
-        <SetNickname
-          initialNickname={session.user.user_metadata.nickname}
-          onComplete={() => {
-            setShowNicknameEdit(false)
-            // 重新載入 session
-            supabase.auth.getSession().then(({ data: { session } }) => {
-              setSession(session)
-            })
-          }}
-          onCancel={() => setShowNicknameEdit(false)}
-        />
-      )}
-
-      {/* Header */}
-      <header className="header">
-        <h1>
-          <Package size={24} />
-          庫存管理系統
-        </h1>
-        <div className="user-profile">
-          <div
-            className="user-info"
-            onClick={() => setShowNicknameEdit(true)}
-            style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}
-          >
-
-            <span style={{ fontSize: '14px', fontWeight: '500', color: 'white' }}>
-              {session.user.user_metadata.nickname || session.user.email}
-            </span>
-          </div>
-          <button className="logout-btn" onClick={() => supabase.auth.signOut()}>
-            <LogOut size={16} />
-          </button>
-        </div>
-      </header>
-
-      {/* 商品列表頁 */}
-      {currentTab === 'list' && (
-        <div>
-          <div className="search-filter-container">
-            <div className="search-box">
-              <Search size={20} className="search-icon" />
-              <input
-                type="text"
-                placeholder="搜尋商品名稱或 SKU..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-              />
-            </div>
-            <select
-              className="category-select"
-              value={selectedCategory}
-              onChange={(e) => setSelectedCategory(e.target.value)}
-            >
-              <option value="all">所有分類</option>
-              {categories.map(cat => (
-                <option key={cat.id} value={cat.id}>{cat.name}</option>
-              ))}
-            </select>
-          </div>
-
-          {products.filter(p => {
-            const matchesSearch = p.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-              p.sku.toLowerCase().includes(searchQuery.toLowerCase())
-            const matchesCategory = selectedCategory === 'all' || p.category_id === selectedCategory
-            return matchesSearch && matchesCategory
-          }).length === 0 ? (
-            <div className="empty-state">
-              <h3>尚無商品</h3>
-              <p>請前往「商品設定」頁面新增商品</p>
-            </div>
-          ) : (
-            <div className="table-container">
-              <table className="table">
-                <thead>
-                  <tr>
-                    <th>商品名稱</th>
-                    <th>1F</th>
-                    <th>2F</th>
-                    <th>倉庫</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {products
-                    .filter(p => {
-                      const matchesSearch = p.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                        p.sku.toLowerCase().includes(searchQuery.toLowerCase())
-                      const matchesCategory = selectedCategory === 'all' || p.category_id === selectedCategory
-                      return matchesSearch && matchesCategory
-                    })
-                    .map(product => {
-                      const category = categories.find(c => c.id === product.category_id)
-                      return (
-                        <tr key={product.id}>
-                          <td>
-                            <div>{product.name}</div>
-                            <div className="sku-text">
-                              {category ? `分類: ${category.name}` : 'SKU: ' + product.sku}
-                            </div>
-                          </td>
-                          <td>{renderQuantityCell(product, 'inventory_1f')}</td>
-                          <td>{renderQuantityCell(product, 'inventory_2f')}</td>
-                          <td>{renderQuantityCell(product, 'inventory_warehouse')}</td>
-                        </tr>
-                      )
-                    })}
-                </tbody>
-              </table>
-            </div>
+    <>
+      <PullToRefresh onRefresh={handleRefresh}>
+        <div className="app">
+          {showNicknameEdit && (
+            <SetNickname
+              initialNickname={session.user.user_metadata.nickname}
+              onComplete={() => {
+                setShowNicknameEdit(false)
+                // 重新載入 session
+                supabase.auth.getSession().then(({ data: { session } }) => {
+                  setSession(session)
+                })
+              }}
+              onCancel={() => setShowNicknameEdit(false)}
+            />
           )}
-        </div>
-      )}
 
-      {currentTab === 'settings' && (
-        <div className="settings-container">
-          <div className="settings-tabs">
-            <button
-              className={`settings-tab ${settingsMode === 'product' ? 'active' : ''}`}
-              onClick={() => setSettingsMode('product')}
-            >
-              新增商品
-            </button>
-            <button
-              className={`settings-tab ${settingsMode === 'category' ? 'active' : ''}`}
-              onClick={() => setSettingsMode('category')}
-            >
-              新增分類
-            </button>
-          </div>
-
-          {settingsMode === 'product' ? (
-            <>
-              <div className="settings-card">
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
-                  <h2 style={{ margin: 0 }}>編輯商品</h2>
-                  <button
-                    type="button"
-                    className="btn btn-primary"
-                    onClick={() => setShowAddProductForm(!showAddProductForm)}
-                  >
-                    <Plus size={20} style={{ marginRight: '8px' }} />
-                    {showAddProductForm ? '取消新增' : '新增商品'}
-                  </button>
-                </div>
-
-                {showAddProductForm && (
-                  <form onSubmit={handleCreateProduct} style={{ marginBottom: '24px', padding: '20px', background: 'var(--bg)', borderRadius: '8px' }}>
-                    <div className="form-group">
-                      <label>商品名稱</label>
-                      <input
-                        type="text"
-                        value={newProduct.name}
-                        onChange={(e) => setNewProduct({ ...newProduct, name: e.target.value })}
-                        placeholder="請輸入商品名稱"
-                      />
-                    </div>
-                    <div className="form-group">
-                      <label>SKU 編號</label>
-                      <input
-                        type="text"
-                        value={newProduct.sku}
-                        onChange={(e) => setNewProduct({ ...newProduct, sku: e.target.value })}
-                        placeholder="請輸入 SKU 編號"
-                      />
-                    </div>
-                    <div className="form-group">
-                      <label>商品分類</label>
-                      <select
-                        value={newProduct.category_id}
-                        onChange={(e) => setNewProduct({ ...newProduct, category_id: e.target.value })}
-                        className={!newProduct.category_id ? 'select-placeholder' : ''}
-                      >
-                        <option value="">選擇分類 (選填)</option>
-                        {categories.map(cat => (
-                          <option key={cat.id} value={cat.id}>{cat.name}</option>
-                        ))}
-                      </select>
-                    </div>
-                    <div className="form-group">
-                      <label>備註</label>
-                      <input
-                        type="text"
-                        value={newProduct.notes}
-                        onChange={(e) => setNewProduct({ ...newProduct, notes: e.target.value })}
-                        placeholder="請輸入備註 (選填)"
-                      />
-                    </div>
-                    <button type="submit" className="btn btn-primary btn-block">
-                      <Plus size={20} style={{ marginRight: '8px' }} />
-                      確認新增
-                    </button>
-                  </form>
-                )}
-
-                {products.length === 0 ? (
-                  <p style={{ color: 'var(--text-muted)', textAlign: 'center' }}>尚無商品</p>
-                ) : (
-                  <div className="product-list">
-                    {products.map(product => {
-                      const category = categories.find(c => c.id === product.category_id)
-                      const isEditing = editingProductId === product.id
-
-                      return (
-                        <div key={product.id} className={`product-item ${isEditing ? 'editing' : ''}`}>
-                          {!isEditing ? (
-                            <div
-                              className="product-info"
-                              onClick={() => startEditProduct(product)}
-                              style={{ cursor: 'pointer' }}
-                            >
-                              <div className="product-name">{product.name}</div>
-                              <div className="product-meta">
-                                <span className="product-sku">SKU: {product.sku}</span>
-                                {category && <span className="product-category">分類: {category.name}</span>}
-                                {product.notes && <span className="product-notes">備註: {product.notes}</span>}
-                              </div>
-                            </div>
-                          ) : (
-                            <div className="product-edit-form">
-                              <div className="form-group">
-                                <label>商品名稱</label>
-                                <input
-                                  type="text"
-                                  value={editingProduct.name}
-                                  onChange={(e) => setEditingProduct({ ...editingProduct, name: e.target.value })}
-                                  placeholder="請輸入商品名稱"
-                                />
-                              </div>
-                              <div className="form-group">
-                                <label>SKU 編號</label>
-                                <input
-                                  type="text"
-                                  value={editingProduct.sku}
-                                  onChange={(e) => setEditingProduct({ ...editingProduct, sku: e.target.value })}
-                                  placeholder="請輸入 SKU 編號"
-                                />
-                              </div>
-                              <div className="form-group">
-                                <label>商品分類</label>
-                                <select
-                                  value={editingProduct.category_id}
-                                  onChange={(e) => setEditingProduct({ ...editingProduct, category_id: e.target.value })}
-                                  className={!editingProduct.category_id ? 'select-placeholder' : ''}
-                                >
-                                  <option value="">選擇分類 (選填)</option>
-                                  {categories.map(cat => (
-                                    <option key={cat.id} value={cat.id}>{cat.name}</option>
-                                  ))}
-                                </select>
-                              </div>
-                              <div className="form-group">
-                                <label>備註</label>
-                                <input
-                                  type="text"
-                                  value={editingProduct.notes}
-                                  onChange={(e) => setEditingProduct({ ...editingProduct, notes: e.target.value })}
-                                  placeholder="請輸入備註 (選填)"
-                                />
-                              </div>
-                              <div className="product-edit-actions">
-                                <button
-                                  type="button"
-                                  className="btn btn-primary"
-                                  onClick={saveEditProduct}
-                                >
-                                  <Save size={18} style={{ marginRight: '6px' }} />
-                                  儲存
-                                </button>
-                                <button
-                                  type="button"
-                                  className="btn btn-secondary"
-                                  onClick={cancelEditProduct}
-                                >
-                                  <X size={18} style={{ marginRight: '6px' }} />
-                                  取消
-                                </button>
-                              </div>
-                            </div>
-                          )}
-                        </div>
-                      )
-                    })}
-                  </div>
-                )}
+          {/* Header */}
+          <header className="header">
+            <h1>
+              <Package size={24} />
+              千奇庫存管理系統
+            </h1>
+            <div className="user-profile">
+              <div
+                className="user-info"
+                onClick={() => setShowNicknameEdit(true)}
+                style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}
+              >
+                <span style={{ fontSize: '14px', fontWeight: '500', color: 'white' }}>
+                  {session.user.user_metadata.nickname || session.user.email}
+                </span>
               </div>
-            </>
-          ) : (
-            <>
-              <div className="settings-card">
-                <h2>新增分類</h2>
-                <form onSubmit={handleCreateCategory}>
-                  <div className="form-group">
-                    <label>分類名稱</label>
-                    <input
-                      type="text"
-                      value={newCategory}
-                      onChange={(e) => setNewCategory(e.target.value)}
-                      placeholder="請輸入分類名稱"
-                    />
-                  </div>
-                  <button
-                    type="submit"
-                    className="btn btn-primary btn-block"
-                    disabled={isCreatingCategory}
-                  >
-                    {isCreatingCategory ? (
-                      <>
-                        <div className="spinner" style={{ marginRight: '8px' }}></div>
-                        處理中...
-                      </>
-                    ) : (
-                      <>
-                        <Plus size={20} style={{ marginRight: '8px' }} />
-                        新增分類
-                      </>
-                    )}
-                  </button>
-                </form>
-              </div>
+              <button className="logout-btn" onClick={() => supabase.auth.signOut()}>
+                <LogOut size={16} />
+              </button>
+            </div>
+          </header>
 
-              <div className="settings-card" style={{ marginTop: '20px' }}>
-                <h2>現有分類</h2>
-                {categories.length === 0 ? (
-                  <p style={{ color: 'var(--text-muted)', textAlign: 'center' }}>尚無分類</p>
-                ) : (
-                  <div className="category-list">
-                    {categories.map(cat => (
-                      <div key={cat.id} className="category-item">
-                        <span>{cat.name}</span>
+          {/* 商品列表頁 */}
+          {currentTab === 'list' && (
+            <div>
+              {/* 說明卡片 */}
+              <div
+                className="description-card"
+                style={{
+                  background: 'var(--surface)',
+                  borderRadius: '12px',
+                  padding: '16px',
+                  marginBottom: '16px',
+                  boxShadow: '0 2px 8px var(--shadow)',
+                  cursor: 'pointer',
+                  transition: 'all 0.3s ease'
+                }}
+                onClick={() => setIsDescriptionExpanded(!isDescriptionExpanded)}
+              >
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div style={{ flex: 1, overflow: 'hidden' }}>
+                    <div style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '8px',
+                      marginBottom: isDescriptionExpanded ? '12px' : '0'
+                    }}>
+                      <strong style={{ color: 'var(--primary)' }}>詳細說明</strong>
+                    </div>
+                    {isDescriptionExpanded && (
+                      <div style={{
+                        color: 'var(--text-secondary)',
+                        fontSize: '14px',
+                        lineHeight: '1.6',
+                        whiteSpace: 'pre-wrap',
+                        wordBreak: 'break-word'
+                      }}>
+                        {description}
                       </div>
-                    ))}
+                    )}
                   </div>
-                )}
+                  <div style={{ marginLeft: '12px', color: 'var(--primary)' }}>
+                    {isDescriptionExpanded ? <ChevronUp size={20} /> : <ChevronDown size={20} />}
+                  </div>
+                </div>
               </div>
-            </>
+
+              <div className="search-filter-container">
+                <div className="search-box">
+                  <Search size={20} className="search-icon" />
+                  <input
+                    type="text"
+                    placeholder="搜尋商品名稱或 SKU..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                  />
+                </div>
+                <select
+                  className="category-select"
+                  value={selectedCategory}
+                  onChange={(e) => setSelectedCategory(e.target.value)}
+                >
+                  <option value="all">所有分類</option>
+                  {categories.map(cat => (
+                    <option key={cat.id} value={cat.id}>{cat.name}</option>
+                  ))}
+                </select>
+              </div>
+
+              {products
+                .filter(p => {
+                  const matchesSearch = p.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                    p.sku.toLowerCase().includes(searchQuery.toLowerCase())
+                  const matchesCategory = selectedCategory === 'all' || p.category_id === selectedCategory
+                  return matchesSearch && matchesCategory
+                })
+                .sort((a, b) => {
+                  const catA = categories.find(c => c.id === a.category_id)?.name || 'zzzz' // 未分類排最後
+                  const catB = categories.find(c => c.id === b.category_id)?.name || 'zzzz'
+                  if (catA !== catB) return catA.localeCompare(catB, 'zh-Hant')
+                  return a.name.localeCompare(b.name, 'zh-Hant')
+                })
+                .length === 0 ? (
+                <div className="empty-state">
+                  <h3>尚無商品</h3>
+                  <p>請前往「商品設定」頁面新增商品</p>
+                </div>
+              ) : (
+                <div className="table-container">
+                  <table className="table">
+                    <thead>
+                      <tr>
+                        <th>商品名稱</th>
+                        <th>1F</th>
+                        <th>2F</th>
+                        <th>倉庫</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {products
+                        .filter(p => {
+                          const matchesSearch = p.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                            p.sku.toLowerCase().includes(searchQuery.toLowerCase())
+                          const matchesCategory = selectedCategory === 'all' || p.category_id === selectedCategory
+                          return matchesSearch && matchesCategory
+                        })
+                        .sort((a, b) => {
+                          const catA = categories.find(c => c.id === a.category_id)?.name || 'zzzz'
+                          const catB = categories.find(c => c.id === b.category_id)?.name || 'zzzz'
+                          if (catA !== catB) return catA.localeCompare(catB, 'zh-Hant')
+                          return a.name.localeCompare(b.name, 'zh-Hant')
+                        })
+                        .map(product => {
+                          const category = categories.find(c => c.id === product.category_id)
+                          return (
+                            <tr key={product.id}>
+                              <td>
+                                <div>{product.name}</div>
+                                <div className="sku-text">
+                                  {category ? `分類: ${category.name}` : 'SKU: ' + product.sku}
+                                </div>
+                              </td>
+                              <td>{renderQuantityCell(product, 'inventory_1f')}</td>
+                              <td>{renderQuantityCell(product, 'inventory_2f')}</td>
+                              <td>{renderQuantityCell(product, 'inventory_warehouse')}</td>
+                            </tr>
+                          )
+                        })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          )}
+
+          {currentTab === 'settings' && (
+            <div className="settings-container">
+              <div className="settings-tabs">
+                <button
+                  className={`settings-tab ${settingsMode === 'product' ? 'active' : ''}`}
+                  onClick={() => setSettingsMode('product')}
+                >
+                  編輯商品
+                </button>
+                <button
+                  className={`settings-tab ${settingsMode === 'category' ? 'active' : ''}`}
+                  onClick={() => setSettingsMode('category')}
+                >
+                  編輯分類
+                </button>
+                <button
+                  className={`settings-tab ${settingsMode === 'description' ? 'active' : ''}`}
+                  onClick={() => {
+                    setSettingsMode('description')
+                    setEditingDescription(description)
+                  }}
+                >
+                  編輯說明
+                </button>
+              </div>
+
+              {settingsMode === 'product' ? (
+                <>
+                  <div className="settings-card">
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+                      <h2 style={{ margin: 0 }}>編輯商品</h2>
+                      <button
+                        type="button"
+                        className="btn btn-primary"
+                        onClick={() => setShowAddProductForm(!showAddProductForm)}
+                      >
+                        <Plus size={20} style={{ marginRight: '8px' }} />
+                        {showAddProductForm ? '取消新增' : '新增商品'}
+                      </button>
+                    </div>
+
+                    {showAddProductForm && (
+                      <form onSubmit={handleCreateProduct} style={{ marginBottom: '24px', padding: '20px', background: 'var(--bg)', borderRadius: '8px' }}>
+                        <div className="form-group">
+                          <label>商品名稱</label>
+                          <input
+                            type="text"
+                            value={newProduct.name}
+                            onChange={(e) => setNewProduct({ ...newProduct, name: e.target.value })}
+                            placeholder="請輸入商品名稱"
+                          />
+                        </div>
+                        <div className="form-group">
+                          <label>SKU 編號</label>
+                          <input
+                            type="text"
+                            value={newProduct.sku}
+                            onChange={(e) => setNewProduct({ ...newProduct, sku: e.target.value })}
+                            placeholder="請輸入 SKU 編號"
+                          />
+                        </div>
+                        <div className="form-group">
+                          <label>商品分類</label>
+                          <select
+                            value={newProduct.category_id}
+                            onChange={(e) => setNewProduct({ ...newProduct, category_id: e.target.value })}
+                            className={!newProduct.category_id ? 'select-placeholder' : ''}
+                          >
+                            <option value="">選擇分類 (選填)</option>
+                            {categories.map(cat => (
+                              <option key={cat.id} value={cat.id}>{cat.name}</option>
+                            ))}
+                          </select>
+                        </div>
+                        <div className="form-group">
+                          <label>備註</label>
+                          <input
+                            type="text"
+                            value={newProduct.notes}
+                            onChange={(e) => setNewProduct({ ...newProduct, notes: e.target.value })}
+                            placeholder="請輸入備註 (選填)"
+                          />
+                        </div>
+                        <button type="submit" className="btn btn-primary btn-block" disabled={isSaving}>
+                          {isSaving ? (
+                            <>
+                              <div className="spinner" style={{ marginRight: '8px' }}></div>
+                              處理中...
+                            </>
+                          ) : (
+                            <>
+                              <Plus size={20} style={{ marginRight: '8px' }} />
+                              確認新增
+                            </>
+                          )}
+                        </button>
+                      </form>
+                    )}
+
+                    {products.length === 0 ? (
+                      <p style={{ color: 'var(--text-muted)', textAlign: 'center' }}>尚無商品</p>
+                    ) : (
+                      <div className="product-list">
+                        {products
+                          .sort((a, b) => {
+                            const catA = categories.find(c => c.id === a.category_id)?.name || 'zzzz'
+                            const catB = categories.find(c => c.id === b.category_id)?.name || 'zzzz'
+                            if (catA !== catB) return catA.localeCompare(catB, 'zh-Hant')
+                            return a.name.localeCompare(b.name, 'zh-Hant')
+                          })
+                          .map(product => {
+                            const category = categories.find(c => c.id === product.category_id)
+                            const isEditing = editingProductId === product.id
+
+                            return (
+                              <div key={product.id} className={`product-item ${isEditing ? 'editing' : ''}`}>
+                                {!isEditing ? (
+                                  <div
+                                    className="product-info"
+                                    onClick={() => startEditProduct(product)}
+                                    style={{ cursor: 'pointer' }}
+                                  >
+                                    <div className="product-name">{product.name}</div>
+                                    <div className="product-meta">
+                                      <span className="product-sku">SKU: {product.sku}</span>
+                                      {category && <span className="product-category">分類: {category.name}</span>}
+                                      {product.notes && <span className="product-notes">備註: {product.notes}</span>}
+                                    </div>
+                                  </div>
+                                ) : (
+                                  <div className="product-edit-form">
+                                    <div className="form-group">
+                                      <label>商品名稱</label>
+                                      <input
+                                        type="text"
+                                        value={editingProduct.name}
+                                        onChange={(e) => setEditingProduct({ ...editingProduct, name: e.target.value })}
+                                        placeholder="請輸入商品名稱"
+                                      />
+                                    </div>
+                                    <div className="form-group">
+                                      <label>SKU 編號</label>
+                                      <input
+                                        type="text"
+                                        value={editingProduct.sku}
+                                        onChange={(e) => setEditingProduct({ ...editingProduct, sku: e.target.value })}
+                                        placeholder="請輸入 SKU 編號"
+                                      />
+                                    </div>
+                                    <div className="form-group">
+                                      <label>商品分類</label>
+                                      <select
+                                        value={editingProduct.category_id}
+                                        onChange={(e) => setEditingProduct({ ...editingProduct, category_id: e.target.value })}
+                                        className={!editingProduct.category_id ? 'select-placeholder' : ''}
+                                      >
+                                        <option value="">選擇分類 (選填)</option>
+                                        {categories.map(cat => (
+                                          <option key={cat.id} value={cat.id}>{cat.name}</option>
+                                        ))}
+                                      </select>
+                                    </div>
+                                    <div className="form-group">
+                                      <label>備註</label>
+                                      <input
+                                        type="text"
+                                        value={editingProduct.notes}
+                                        onChange={(e) => setEditingProduct({ ...editingProduct, notes: e.target.value })}
+                                        placeholder="請輸入備註 (選填)"
+                                      />
+                                    </div>
+                                    <div className="product-edit-actions">
+                                      <button
+                                        type="button"
+                                        className="btn btn-primary"
+                                        onClick={saveEditProduct}
+                                        disabled={isSaving}
+                                      >
+                                        {isSaving ? (
+                                          <>
+                                            <div className="spinner" style={{ marginRight: '6px' }}></div>
+                                            儲存中...
+                                          </>
+                                        ) : (
+                                          <>
+                                            <Save size={18} style={{ marginRight: '6px' }} />
+                                            儲存
+                                          </>
+                                        )}
+                                      </button>
+                                      <button
+                                        type="button"
+                                        className="btn btn-secondary"
+                                        onClick={cancelEditProduct}
+                                      >
+                                        <X size={18} style={{ marginRight: '6px' }} />
+                                        取消
+                                      </button>
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
+                            )
+                          })}
+                      </div>
+                    )}
+                  </div>
+                </>
+              ) : settingsMode === 'category' ? (
+                <>
+                  <div className="settings-card">
+                    <h2>新增分類</h2>
+                    <form onSubmit={handleCreateCategory}>
+                      <div className="form-group">
+                        <label>分類名稱</label>
+                        <input
+                          type="text"
+                          value={newCategory}
+                          onChange={(e) => setNewCategory(e.target.value)}
+                          placeholder="請輸入分類名稱"
+                        />
+                      </div>
+                      <button
+                        type="submit"
+                        className="btn btn-primary btn-block"
+                        disabled={isCreatingCategory}
+                      >
+                        {isCreatingCategory ? (
+                          <>
+                            <div className="spinner" style={{ marginRight: '8px' }}></div>
+                            處理中...
+                          </>
+                        ) : (
+                          <>
+                            <Plus size={20} style={{ marginRight: '8px' }} />
+                            新增分類
+                          </>
+                        )}
+                      </button>
+                    </form>
+                  </div>
+
+                  <div className="settings-card" style={{ marginTop: '20px' }}>
+                    <h2>現有分類</h2>
+                    {categories.length === 0 ? (
+                      <p style={{ color: 'var(--text-muted)', textAlign: 'center' }}>尚無分類</p>
+                    ) : (
+                      <div className="category-list">
+                        {categories.map(cat => {
+                          const isEditing = editingCategoryId === cat.id
+
+                          return (
+                            <div key={cat.id} className={`category-item ${isEditing ? 'editing' : ''}`}>
+                              {!isEditing ? (
+                                <div
+                                  className="category-info"
+                                  onClick={() => startEditCategory(cat)}
+                                  style={{ cursor: 'pointer', padding: '12px', borderRadius: '8px', transition: 'background 0.2s' }}
+                                  onMouseEnter={(e) => e.currentTarget.style.background = 'var(--bg)'}
+                                  onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+                                >
+                                  <span>{cat.name}</span>
+                                </div>
+                              ) : (
+                                <div className="category-edit-form" style={{ padding: '12px' }}>
+                                  <div className="form-group" style={{ marginBottom: '12px' }}>
+                                    <label>分類名稱</label>
+                                    <input
+                                      type="text"
+                                      value={editingCategory.name}
+                                      onChange={(e) => setEditingCategory({ name: e.target.value })}
+                                      placeholder="請輸入分類名稱"
+                                      autoFocus
+                                    />
+                                  </div>
+                                  <div style={{ display: 'flex', gap: '8px' }}>
+                                    <button
+                                      type="button"
+                                      className="btn btn-primary"
+                                      onClick={saveEditCategory}
+                                      disabled={isSaving}
+                                      style={{ flex: 1 }}
+                                    >
+                                      {isSaving ? (
+                                        <>
+                                          <div className="spinner" style={{ marginRight: '6px' }}></div>
+                                          儲存中...
+                                        </>
+                                      ) : (
+                                        <>
+                                          <Save size={18} style={{ marginRight: '6px' }} />
+                                          儲存
+                                        </>
+                                      )}
+                                    </button>
+                                    <button
+                                      type="button"
+                                      className="btn btn-secondary"
+                                      onClick={cancelEditCategory}
+                                      style={{ flex: 1 }}
+                                    >
+                                      <X size={18} style={{ marginRight: '6px' }} />
+                                      取消
+                                    </button>
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          )
+                        })}
+                      </div>
+                    )}
+                  </div>
+                </>
+              ) : settingsMode === 'description' ? (
+                <>
+                  <div className="settings-card">
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+                      <h2 style={{ margin: 0 }}>編輯說明</h2>
+                      {descriptionUpdatedAt && (
+                        <div style={{ fontSize: '13px', color: 'var(--text-secondary)' }}>
+                          最後編輯：{new Date(descriptionUpdatedAt).toLocaleString('zh-TW', {
+                            month: '2-digit',
+                            day: '2-digit',
+                            hour: '2-digit',
+                            minute: '2-digit'
+                          })}
+                          {descriptionUpdatedBy && ` by ${descriptionUpdatedBy}`}
+                        </div>
+                      )}
+                    </div>
+                    <div className="form-group">
+                      <label>說明內容</label>
+                      <textarea
+                        value={editingDescription}
+                        onChange={(e) => setEditingDescription(e.target.value)}
+                        placeholder="請輸入系統使用說明..."
+                        rows="10"
+                        style={{
+                          width: '100%',
+                          padding: '12px',
+                          border: '1px solid var(--border)',
+                          borderRadius: '8px',
+                          fontSize: '14px',
+                          fontFamily: 'inherit',
+                          resize: 'vertical',
+                          minHeight: '200px'
+                        }}
+                      />
+                    </div>
+                    <button
+                      type="button"
+                      className="btn btn-primary btn-block"
+                      onClick={saveDescription}
+                      disabled={isSavingDescription}
+                    >
+                      {isSavingDescription ? (
+                        <>
+                          <div className="spinner" style={{ marginRight: '8px' }}></div>
+                          儲存中...
+                        </>
+                      ) : (
+                        <>
+                          <Save size={20} style={{ marginRight: '8px' }} />
+                          儲存說明
+                        </>
+                      )}
+                    </button>
+                  </div>
+                </>
+              ) : null}
+            </div>
           )}
         </div>
-      )}
+      </PullToRefresh>
 
       {/* 底部導航 */}
       <nav className="bottom-nav">
@@ -773,7 +1108,7 @@ function App() {
 
       {/* Offline Indicator */}
       <OfflineIndicator />
-    </div>
+    </>
   )
 }
 

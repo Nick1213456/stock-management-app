@@ -35,7 +35,7 @@ export default function Login() {
                     <div className="logo-circle">
                         <Package size={32} color="white" />
                     </div>
-                    <h1>庫存管理系統</h1>
+                    <h1>千奇庫存管理系統</h1>
                     <p>請登入以繼續使用</p>
                 </div>
 

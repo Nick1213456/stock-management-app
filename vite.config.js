@@ -10,9 +10,9 @@ export default defineConfig({
       registerType: 'autoUpdate',
       includeAssets: ['favicon.ico', 'apple-touch-icon.png', 'mask-icon.svg'],
       manifest: {
-        name: '庫存管理系統',
-        short_name: '庫存系統',
-        description: '簡易庫存管理系統 - 支援 1F、2F 和倉庫的庫存追蹤',
+        name: '千奇庫存管理系統',
+        short_name: '千奇庫存',
+        description: '千奇庫存管理系統 - 支援 1F、2F 和倉庫的庫存追蹤',
         theme_color: '#ffffff',
         background_color: '#f8fafc',
         display: 'standalone',
