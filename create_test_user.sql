@@ -1,0 +1,48 @@
+-- 建立一個測試用的使用者（使用 Email/Password）
+-- 這可以幫助我們確認是否只是 Google OAuth 的問題
+
+-- 請在 Supabase Dashboard 的 Authentication > Users 頁面
+-- 點擊 "Add user" 按鈕
+-- 填入：
+-- Email: test@example.com
+-- Password: test123456
+-- 然後勾選 "Auto Confirm User"
+
+-- 或者執行以下 SQL（但建議用 UI 操作）：
+-- INSERT INTO auth.users (
+--   instance_id,
+--   id,
+--   aud,
+--   role,
+--   email,
+--   encrypted_password,
+--   email_confirmed_at,
+--   recovery_sent_at,
+--   last_sign_in_at,
+--   raw_app_meta_data,
+--   raw_user_meta_data,
+--   created_at,
+--   updated_at,
+--   confirmation_token,
+--   email_change,
+--   email_change_token_new,
+--   recovery_token
+-- ) VALUES (
+--   '00000000-0000-0000-0000-000000000000',
+--   gen_random_uuid(),
+--   'authenticated',
+--   'authenticated',
+--   'test@example.com',
+--   crypt('test123456', gen_salt('bf')),
+--   NOW(),
+--   NOW(),
+--   NOW(),
+--   '{"provider":"email","providers":["email"]}',
+--   '{}',
+--   NOW(),
+--   NOW(),
+--   '',
+--   '',
+--   '',
+--   ''
+-- );

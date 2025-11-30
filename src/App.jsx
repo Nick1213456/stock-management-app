@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { supabase } from './supabaseClient'
 import { Package, Settings, Save, X, List, Search, Plus, LogOut } from 'lucide-react'
 import Login from './Login'
+import SetNickname from './SetNickname'
 import PWAInstallPrompt from './PWAInstallPrompt'
 import OfflineIndicator from './OfflineIndicator'
 import './index.css'
@@ -23,16 +24,55 @@ function App() {
   const [editingProductId, setEditingProductId] = useState(null)
   const [editingProduct, setEditingProduct] = useState({ name: '', sku: '', category_id: '', notes: '' })
   const [session, setSession] = useState(null)
+  const [needsNickname, setNeedsNickname] = useState(false)
+  const [showNicknameEdit, setShowNicknameEdit] = useState(false)
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
+    // Check for existing session
+    supabase.auth.getSession().then(({ data: { session }, error }) => {
+      console.log('Initial session check:', session, 'Error:', error)
+      if (error) {
+        console.error('Session error:', error)
+      }
       setSession(session)
+      if (!session) {
+        setLoading(false)
+      }
+    }).catch(err => {
+      console.error('Failed to get session:', err)
+      setLoading(false)
     })
 
+    // Listen for auth changes
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, session) => {
+    } = supabase.auth.onAuthStateChange(async (event, session) => {
+      console.log('Auth state change:', event, session)
       setSession(session)
+
+      if (event === 'SIGNED_IN') {
+        console.log('User signed in successfully!', session?.user)
+        // 檢查使用者是否已設定暱稱
+        const nickname = session?.user?.user_metadata?.nickname
+        if (!nickname) {
+          setNeedsNickname(true)
+        } else {
+          setNeedsNickname(false)
+        }
+      }
+
+      if (event === 'SIGNED_OUT') {
+        console.log('User signed out')
+        setLoading(false)
+      }
+
+      if (event === 'TOKEN_REFRESHED') {
+        console.log('Token refreshed')
+      }
+
+      if (event === 'USER_UPDATED') {
+        console.log('User updated')
+      }
     })
 
     return () => subscription.unsubscribe()
@@ -40,9 +80,15 @@ function App() {
 
   // 載入所有商品
   useEffect(() => {
-    fetchProducts()
-    fetchCategories()
-  }, [])
+    if (session) {
+      console.log('Session exists, fetching data...')
+      fetchProducts()
+      fetchCategories()
+    } else {
+      console.log('No session, skipping data fetch')
+      setLoading(false)
+    }
+  }, [session])
 
   const fetchProducts = async () => {
     try {
@@ -85,6 +131,8 @@ function App() {
       return
     }
 
+    const userIdentifier = session?.user?.user_metadata?.nickname || session?.user?.email || 'Unknown'
+
     try {
       const { data, error } = await supabase
         .from('products')
@@ -97,8 +145,8 @@ function App() {
             inventory_1f: 0,
             inventory_2f: 0,
             inventory_warehouse: 0,
-            last_modified_by: session.user.email,
-            last_modified_by: session.user.email
+            last_modified_by: userIdentifier,
+            last_modified_by: userIdentifier
           }
         ])
         .select()
@@ -139,6 +187,8 @@ function App() {
       return
     }
 
+    const userIdentifier = session?.user?.user_metadata?.nickname || session?.user?.email || 'Unknown'
+
     try {
       const { error } = await supabase
         .from('products')
@@ -147,8 +197,8 @@ function App() {
           sku: editingProduct.sku,
           category_id: editingProduct.category_id || null,
           notes: editingProduct.notes || null,
-          last_modified_by: session.user.email,
-          last_modified_by: session.user.email
+          last_modified_by: userIdentifier,
+          last_modified_by: userIdentifier
         })
         .eq('id', editingProductId)
 
@@ -215,17 +265,27 @@ function App() {
       return
     }
 
+    // 取得使用者暱稱，如果沒有則使用 email
+    const userIdentifier = session?.user?.user_metadata?.nickname || session?.user?.email || 'Unknown'
+
     try {
+      // 處理欄位名稱映射（資料庫中使用 war 而不是 warehouse）
+      let dbFieldPrefix = editingCell.field
+      if (editingCell.field === 'inventory_warehouse') {
+        dbFieldPrefix = 'inventory_war'
+      }
+
       // 決定要更新的時間戳欄位
-      const timestampField = editingCell.field + '_updated_at'
+      const timestampField = dbFieldPrefix + '_updated_at'
+      const userField = dbFieldPrefix + '_updated_by'
 
       const { error } = await supabase
         .from('products')
         .update({
           [editingCell.field]: quantity,
           [timestampField]: new Date().toISOString(),
-          [editingCell.field + '_updated_by']: session.user.email,
-          last_modified_by: session.user.email
+          [userField]: userIdentifier,
+          last_modified_by: userIdentifier
         })
         .eq('id', editingCell.productId)
 
@@ -237,8 +297,8 @@ function App() {
           ...p,
           [editingCell.field]: quantity,
           [timestampField]: new Date().toISOString(),
-          [editingCell.field + '_updated_by']: session.user.email,
-          last_modified_by: session.user.email
+          [userField]: userIdentifier,
+          last_modified_by: userIdentifier
         } : p
       ))
       cancelEdit()
@@ -279,10 +339,16 @@ function App() {
 
     }
 
+    // 處理欄位名稱映射（資料庫中使用 war 而不是 warehouse）
+    let dbFieldPrefix = field
+    if (field === 'inventory_warehouse') {
+      dbFieldPrefix = 'inventory_war'
+    }
+
     // 取得對應的時間戳欄位
-    const timestampField = field + '_updated_at'
+    const timestampField = dbFieldPrefix + '_updated_at'
     const timestamp = product[timestampField]
-    const userField = field + '_updated_by'
+    const userField = dbFieldPrefix + '_updated_by'
     const updatedBy = product[userField]
 
     // 格式化時間顯示
@@ -305,7 +371,7 @@ function App() {
         {timestamp && (
           <div className="quantity-timestamp">
             {formatTimestamp(timestamp)}
-            {updatedBy && <span className="updated-by-info">by {updatedBy.split('@')[0]}</span>}
+            {updatedBy && <span className="updated-by-info">by {updatedBy}</span>}
           </div>
         )}
       </div>
@@ -330,8 +396,32 @@ function App() {
     return <Login />
   }
 
+  if (needsNickname) {
+    return <SetNickname onComplete={() => {
+      setNeedsNickname(false)
+      // 重新載入 session 以取得更新後的 metadata
+      supabase.auth.getSession().then(({ data: { session } }) => {
+        setSession(session)
+      })
+    }} />
+  }
+
   return (
     <div className="app">
+      {showNicknameEdit && (
+        <SetNickname
+          initialNickname={session.user.user_metadata.nickname}
+          onComplete={() => {
+            setShowNicknameEdit(false)
+            // 重新載入 session
+            supabase.auth.getSession().then(({ data: { session } }) => {
+              setSession(session)
+            })
+          }}
+          onCancel={() => setShowNicknameEdit(false)}
+        />
+      )}
+
       {/* Header */}
       <header className="header">
         <h1>
@@ -339,11 +429,16 @@ function App() {
           庫存管理系統
         </h1>
         <div className="user-profile">
-          <img
-            src={session.user.user_metadata.avatar_url || `https://ui-avatars.com/api/?name=${session.user.email}`}
-            alt="User"
-            className="user-avatar"
-          />
+          <div
+            className="user-info"
+            onClick={() => setShowNicknameEdit(true)}
+            style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}
+          >
+
+            <span style={{ fontSize: '14px', fontWeight: '500', color: 'white' }}>
+              {session.user.user_metadata.nickname || session.user.email}
+            </span>
+          </div>
           <button className="logout-btn" onClick={() => supabase.auth.signOut()}>
             <LogOut size={16} />
           </button>

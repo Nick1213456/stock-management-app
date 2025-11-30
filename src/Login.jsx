@@ -12,11 +12,16 @@ export default function Login() {
             const { error } = await supabase.auth.signInWithOAuth({
                 provider: 'google',
                 options: {
-                    redirectTo: window.location.origin
+                    redirectTo: `${window.location.origin}`,
+                    queryParams: {
+                        access_type: 'offline',
+                        prompt: 'consent',
+                    }
                 }
             })
             if (error) throw error
         } catch (error) {
+            console.error('Login error:', error)
             alert('登入失敗: ' + error.message)
         } finally {
             setLoading(false)
