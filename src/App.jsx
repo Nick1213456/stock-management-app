@@ -230,7 +230,7 @@ function App() {
 
     if (isEditing) {
       return (
-        <div style={{ display: 'flex', flexDirection: 'column' }}>
+        <div className="quantity-edit-wrapper">
           <input
             type="number"
             className="edit-quantity-input"
@@ -242,7 +242,7 @@ function App() {
             }}
             autoFocus
           />
-          <div className="edit-actions" style={{ padding: '10px 8px' }}>
+          <div className="edit-actions">
             <button className="icon-btn save" onClick={saveEdit}>
               <Save size={16} />
             </button>
@@ -252,6 +252,7 @@ function App() {
           </div>
         </div>
       )
+
     }
 
     // 取得對應的時間戳欄位
