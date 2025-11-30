@@ -230,7 +230,7 @@ function App() {
 
     if (isEditing) {
       return (
-        <div style={{ display: 'flex', alignItems: 'center' }}>
+        <div style={{ display: 'flex', flexDirection: 'column' }}>
           <input
             type="number"
             className="edit-quantity-input"
@@ -242,7 +242,7 @@ function App() {
             }}
             autoFocus
           />
-          <div className="edit-actions">
+          <div className="edit-actions" style={{ padding: '10px 8px' }}>
             <button className="icon-btn save" onClick={saveEdit}>
               <Save size={16} />
             </button>

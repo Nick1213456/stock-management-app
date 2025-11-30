@@ -219,7 +219,6 @@ body {
 .edit-actions {
   display: inline-flex;
   gap: 6px;
-  margin-left: 8px;
 }
 
 .icon-btn {
@@ -779,6 +778,7 @@ body {
   .table td {
     padding: 12px 8px;
     font-size: 13px;
+    text-align: center;
   }
 
   .table th:first-child,
