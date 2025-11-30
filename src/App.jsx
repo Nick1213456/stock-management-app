@@ -191,7 +191,7 @@ function App() {
 
     const quantity = parseInt(editValue)
     if (isNaN(quantity) || quantity < 0) {
-      alert('請輸入有效的數量（0或正整數）')
+      alert('請輸入有效的數量（0或正整數，不能是負數）')
       return
     }
 
