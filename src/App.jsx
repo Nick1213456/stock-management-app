@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { supabase } from './supabaseClient'
-import { Package, Settings, Save, X, List, Search, Plus } from 'lucide-react'
+import { Package, Settings, Save, X, List, Search, Plus, LogOut } from 'lucide-react'
+import Login from './Login'
 import PWAInstallPrompt from './PWAInstallPrompt'
 import OfflineIndicator from './OfflineIndicator'
 import './index.css'
@@ -21,6 +22,21 @@ function App() {
   const [showAddProductForm, setShowAddProductForm] = useState(false)
   const [editingProductId, setEditingProductId] = useState(null)
   const [editingProduct, setEditingProduct] = useState({ name: '', sku: '', category_id: '', notes: '' })
+  const [session, setSession] = useState(null)
+
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setSession(session)
+    })
+
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, session) => {
+      setSession(session)
+    })
+
+    return () => subscription.unsubscribe()
+  }, [])
 
   // 載入所有商品
   useEffect(() => {
@@ -80,7 +96,9 @@ function App() {
             notes: newProduct.notes || null,
             inventory_1f: 0,
             inventory_2f: 0,
-            inventory_warehouse: 0
+            inventory_warehouse: 0,
+            last_modified_by: session.user.email,
+            last_modified_by: session.user.email
           }
         ])
         .select()
@@ -128,7 +146,9 @@ function App() {
           name: editingProduct.name,
           sku: editingProduct.sku,
           category_id: editingProduct.category_id || null,
-          notes: editingProduct.notes || null
+          notes: editingProduct.notes || null,
+          last_modified_by: session.user.email,
+          last_modified_by: session.user.email
         })
         .eq('id', editingProductId)
 
@@ -203,7 +223,9 @@ function App() {
         .from('products')
         .update({
           [editingCell.field]: quantity,
-          [timestampField]: new Date().toISOString()
+          [timestampField]: new Date().toISOString(),
+          [editingCell.field + '_updated_by']: session.user.email,
+          last_modified_by: session.user.email
         })
         .eq('id', editingCell.productId)
 
@@ -214,7 +236,9 @@ function App() {
         p.id === editingCell.productId ? {
           ...p,
           [editingCell.field]: quantity,
-          [timestampField]: new Date().toISOString()
+          [timestampField]: new Date().toISOString(),
+          [editingCell.field + '_updated_by']: session.user.email,
+          last_modified_by: session.user.email
         } : p
       ))
       cancelEdit()
@@ -258,6 +282,8 @@ function App() {
     // 取得對應的時間戳欄位
     const timestampField = field + '_updated_at'
     const timestamp = product[timestampField]
+    const userField = field + '_updated_by'
+    const updatedBy = product[userField]
 
     // 格式化時間顯示
     const formatTimestamp = (ts) => {
@@ -277,7 +303,10 @@ function App() {
       >
         <div className="quantity-cell">{product[field]}</div>
         {timestamp && (
-          <div className="quantity-timestamp">{formatTimestamp(timestamp)}</div>
+          <div className="quantity-timestamp">
+            {formatTimestamp(timestamp)}
+            {updatedBy && <span className="updated-by-info">by {updatedBy.split('@')[0]}</span>}
+          </div>
         )}
       </div>
     )
@@ -297,6 +326,10 @@ function App() {
     )
   }
 
+  if (!session) {
+    return <Login />
+  }
+
   return (
     <div className="app">
       {/* Header */}
@@ -305,6 +338,16 @@ function App() {
           <Package size={24} />
           庫存管理系統
         </h1>
+        <div className="user-profile">
+          <img
+            src={session.user.user_metadata.avatar_url || `https://ui-avatars.com/api/?name=${session.user.email}`}
+            alt="User"
+            className="user-avatar"
+          />
+          <button className="logout-btn" onClick={() => supabase.auth.signOut()}>
+            <LogOut size={16} />
+          </button>
+        </div>
       </header>
 
       {/* 商品列表頁 */}
